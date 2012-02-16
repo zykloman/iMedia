@@ -267,6 +267,7 @@
 		node.groupType = inOldNode.groupType;
 		node.leaf = inOldNode.leaf;
 		node.parser = self;
+        node.isTopLevelNode = inOldNode.isTopLevelNode;
 	}
 	
 	// If we have more than one library then append the library name to the root node...
@@ -535,6 +536,16 @@
 
 //----------------------------------------------------------------------------------------------------------------------
 
+// Returns whether the album dictionary provided represents the "Flagged" album
+
+- (BOOL) isFlaggedAlbum:(NSDictionary*)inAlbumDict
+{
+    return [[inAlbumDict objectForKey:@"uuid"] isEqualToString:@"flaggedAlbum"];
+}
+
+
+//----------------------------------------------------------------------------------------------------------------------
+
 
 // Icons for older Aperture versions...
 
@@ -581,7 +592,8 @@
 {
 	static const IMBIconTypeMappingEntry kIconTypeMappingEntries[] =
 	{
-		{@"v3-Faces",@"sl-icon-small_people.tiff",		@"folder",	nil,	nil},
+		{@"v3-Photo Stream",@"SL-stream.tiff",          @"folder",	nil,	nil},   // photo stream
+		{@"v3-Faces",@"sl-icon-small_people.tiff",		@"folder",	nil,	nil},   // faces
 		{@"v3-1",	@"SL-album.tiff",					@"folder",	nil,	nil},	// album
 		{@"v3-2",	@"SL-smartAlbum.tiff",				@"folder",	nil,	nil},	// smart album
 		{@"v3-3",	@"SL-smartAlbum.tiff",				@"folder",	nil,	nil},	// library **** ... 200X
@@ -785,7 +797,7 @@
 	// Create the objects array on demand  - even if turns out to be empty after exiting this method, because
 	// without creating an array we would cause an endless loop...
 	
-	NSMutableArray* objects = [[NSMutableArray alloc] initWithArray:inNode.objects];
+	NSMutableArray* objects = [NSMutableArray array];
 
 	// Look for the correct album in the Aperture XML plist. Once we find it, populate the node with IMBVisualObjects
 	// for each image in this album...
@@ -840,7 +852,6 @@
 		[pool1 drain];
     
     inNode.objects = objects;
-    [objects release];
 }
 
 
