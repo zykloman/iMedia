@@ -157,7 +157,7 @@ static NSString* kIMBSelectNodeWithIdentifierNotification = @"IMBSelectNodeWithI
 	NSMutableDictionary* stateDict = [NSMutableDictionary dictionary];
 	[stateDict setObject:expandedNodeIdentifiers forKey:@"expandedNodeIdentifiers"];
 
-	NSMutableDictionary* classDict = [IMBConfig prefsForClass:self.class];
+	NSMutableDictionary* classDict = [NSMutableDictionary dictionaryWithDictionary:[IMBConfig prefsForClass:self.class]];
 	[classDict setObject:stateDict forKey:kIMBMediaTypeImage];
 	[classDict setObject:stateDict forKey:kIMBMediaTypeAudio];
 	[classDict setObject:stateDict forKey:kIMBMediaTypeMovie];
@@ -363,14 +363,14 @@ static NSString* kIMBSelectNodeWithIdentifierNotification = @"IMBSelectNodeWithI
 
 - (NSMutableDictionary*) _preferences
 {
-	NSMutableDictionary* classDict = [IMBConfig prefsForClass:self.class];
+	NSDictionary* classDict = [IMBConfig prefsForClass:self.class];
 	return [NSMutableDictionary dictionaryWithDictionary:[classDict objectForKey:self.mediaType]];
 }
 
 
 - (void) _setPreferences:(NSMutableDictionary*)inDict
 {
-	NSMutableDictionary* classDict = [IMBConfig prefsForClass:self.class];
+	NSMutableDictionary* classDict = [NSMutableDictionary dictionaryWithDictionary:[IMBConfig prefsForClass:self.class]];
 	if (inDict) [classDict setObject:inDict forKey:self.mediaType];
 	[IMBConfig setPrefs:classDict forClass:self.class];
 }
@@ -683,6 +683,19 @@ static NSString* kIMBSelectNodeWithIdentifierNotification = @"IMBSelectNodeWithI
 {
 	IMBNode* node = [inItem representedObject];
 	return node.isGroup;
+}
+
+- (BOOL)respondsToSelector:(SEL)aSelector;
+{
+    // I found that (slightly weirdly), if you implement -outlineView:isGroupItem:, NSOutlineView assumes that you must have at least one group item somewhere in the tree, and so it automatically outdents all but the top-level nodes by 1. Thus if configured not to show group nodes, we need to pretend that method doesn't even exist so as to receive regular layout
+    if (aSelector == @selector(outlineView:isGroupItem:))
+    {
+        return [IMBConfig showsGroupNodes];
+    }
+    else
+    {
+        return [super respondsToSelector:aSelector];
+    }
 }
 
 
@@ -1080,26 +1093,22 @@ static NSString* kIMBSelectNodeWithIdentifierNotification = @"IMBSelectNodeWithI
 	[panel setCanChooseFiles:NO];
 	[panel setResolvesAliases:YES];
 
-	NSWindow* window = [ibSplitView window];
-	[panel beginSheetForDirectory:nil file:nil types:nil modalForWindow:window modalDelegate:self didEndSelector:@selector(openPanelDidEnd:returnCode:contextInfo:) contextInfo:NULL];
-}
-
-
-// Add a root node for this each folder and the reload the library...
-	
-- (void) openPanelDidEnd:(NSOpenPanel*)inPanel returnCode:(int)inReturnCode contextInfo:(void*)inContextInfo
-{
-	if (inReturnCode == NSOKButton)
-	{
-		NSArray* paths = [inPanel filenames];
-		for (NSString* path in paths)
-		{
-			IMBParser* parser = [self.libraryController addCustomRootNodeForFolder:path];
-			self.selectedNodeIdentifier = [parser identifierForPath:path];
-		}	
-		
-		[self.libraryController reload];
-	}
+	[panel beginSheetModalForWindow:[ibSplitView window] completionHandler:^(NSInteger result) {
+        
+        // Add a root node for this each folder and the reload the library...
+        if (result == NSFileHandlingPanelOKButton)
+        {
+            NSArray *urls = [panel URLs];
+            for (NSURL *aURL in urls)
+            {
+                NSString *path = [aURL path];
+                IMBParser* parser = [self.libraryController addCustomRootNodeForFolder:path];
+                self.selectedNodeIdentifier = [parser identifierForPath:path];
+            }	
+            
+            [self.libraryController reload];
+        }
+    }];
 }
 
 

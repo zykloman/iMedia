@@ -504,7 +504,7 @@ typedef enum {
 	// Example of a photo that can't be downloaded: THE DECEIVING title.
 	
 	//	load the specified page...
-	NSString* page = [NSString stringWithFormat:@"%d", self.page + 1];
+	NSString* page = [NSString stringWithFormat:@"%ld", self.page + 1];
 	[arguments setObject:page forKey:@"page"];
 	
 	return arguments;
@@ -515,7 +515,7 @@ typedef enum {
 
 + (NSString *)base58EncodedValue:(long long)num {
 	NSString *alphabet = @"123456789abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ";
-	int baseCount = [alphabet length];
+	NSInteger baseCount = [alphabet length];
 	NSString *encoded = @"";
 	while(num >= baseCount) {
 		double div = num/baseCount;
@@ -532,7 +532,7 @@ typedef enum {
 }
 
 
-+ (NSString*) descriptionOfLicense: (int) aLicenseNumber {
++ (NSString*) descriptionOfLicense: (NSInteger) aLicenseNumber {
 	NSString* result = nil;
 	switch (aLicenseNumber)
 	{
