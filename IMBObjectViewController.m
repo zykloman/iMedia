@@ -90,6 +90,7 @@ static NSString* kArrangedObjectsKey = @"arrangedObjects";
 static NSString* kImageRepresentationKeyPath = @"arrangedObjects.imageRepresentation";
 static NSString* kQuickLookImageKeyPath = @"arrangedObjects.quickLookImage";
 static NSString* kObjectCountStringKey = @"objectCountString";
+static NSString * const kSelectionObservationKeyPath = @"selectionIndexes";
 static NSString* kIMBPrivateItemIndexPasteboardType = @"com.karelia.imedia.imbobjectviewcontroller.itemindex";
 
 NSString* kIMBPublicTitleListPasteboardType = @"imedia.title";
@@ -146,12 +147,10 @@ NSString* const IMBObjectViewControllerSegmentedControlKey = @"SegmentedControl"
 @synthesize objectArrayController = ibObjectArrayController;
 @synthesize progressWindowController = _progressWindowController;
 
-@synthesize viewType = _viewType;
 @synthesize tabView = ibTabView;
 @synthesize iconView = ibIconView;
 @synthesize listView = ibListView;
 @synthesize comboView = ibComboView;
-@synthesize iconSize = _iconSize;
 
 @synthesize objectCountFormatSingular = _objectCountFormatSingular;
 @synthesize objectCountFormatPlural = _objectCountFormatPlural;
@@ -328,6 +327,7 @@ NSString* const IMBObjectViewControllerSegmentedControlKey = @"SegmentedControl"
 	[ibObjectArrayController addObserver:self forKeyPath:kArrangedObjectsKey options:0 context:(void*)kArrangedObjectsKey];
 	[ibObjectArrayController addObserver:self forKeyPath:kImageRepresentationKeyPath options:NSKeyValueObservingOptionNew context:(void*)kImageRepresentationKeyPath];
 	[ibObjectArrayController addObserver:self forKeyPath:kQuickLookImageKeyPath options:NSKeyValueObservingOptionNew context:(void*)kQuickLookImageKeyPath];
+    [ibObjectArrayController addObserver:self forKeyPath:kSelectionObservationKeyPath options:0 context:kSelectionObservationKeyPath];
 
 	// For tooltip display, we pay attention to changes in the icon view's scroller clip view, because 
 	// that will naturally indicate a change in visible items (unfortunately IKImageBrowserView's visibleItemIndexes
@@ -343,14 +343,6 @@ NSString* const IMBObjectViewControllerSegmentedControlKey = @"SegmentedControl"
 		}
 	}
 
-	// We need to save preferences before the app quits...
-	
-	[[NSNotificationCenter defaultCenter] 
-		 addObserver:self 
-		 selector:@selector(_saveStateToPreferences) 
-		 name:NSApplicationWillTerminateNotification 
-		 object:nil];
-	
 	// Observe changes by other controllers to global view type preference if we use global view type
 	// so we can change our own view type accordingly
 	
@@ -416,7 +408,7 @@ NSString* const IMBObjectViewControllerSegmentedControlKey = @"SegmentedControl"
 	}
 	
 	// Stop observing the array...
-	
+	[ibObjectArrayController removeObserver:self forKeyPath:kSelectionObservationKeyPath];
 	[ibObjectArrayController removeObserver:self forKeyPath:kQuickLookImageKeyPath];
 	[ibObjectArrayController removeObserver:self forKeyPath:kImageRepresentationKeyPath];
 	[ibObjectArrayController removeObserver:self forKeyPath:kArrangedObjectsKey];
@@ -506,6 +498,10 @@ NSString* const IMBObjectViewControllerSegmentedControlKey = @"SegmentedControl"
 				arrayWithObject:NSRunLoopCommonModes]];
 		}
     }
+    else if (inContext == kSelectionObservationKeyPath)
+    {
+        [self _saveStateToPreferences];
+    }
 	else
 	{
 		[super observeValueForKeyPath:inKeyPath ofObject:inObject change:inChange context:inContext];
@@ -576,7 +572,7 @@ NSString* const IMBObjectViewControllerSegmentedControlKey = @"SegmentedControl"
 
 - (void) _loadStateFromPreferences
 {
-	NSMutableDictionary* stateDict = [self _preferences];
+	NSDictionary* stateDict = [IMBConfig prefsForClass:self.class];
 	self.viewType = [[stateDict objectForKey:@"viewType"] unsignedIntegerValue];
 	self.iconSize = [[stateDict objectForKey:@"iconSize"] doubleValue];
 	
@@ -710,6 +706,31 @@ NSString* const IMBObjectViewControllerSegmentedControlKey = @"SegmentedControl"
 	return nil;	// Must be overridden by subclass
 }
 
++ (NSImage *)iconForAppWithBundleIdentifier:(NSString *)identifier fallbackFolder:(NSSearchPathDirectory)directory;
+{
+    // Use app's icon, falling back to the folder's icon, and finally generic folder
+    NSWorkspace *workspace = [NSWorkspace sharedWorkspace];
+    NSString *path = [workspace absolutePathForAppBundleWithIdentifier:identifier];
+	NSImage *result = [workspace iconForFile:path];
+    
+    if (!result)
+    {
+        NSURL *picturesFolder = [[NSFileManager defaultManager] URLForDirectory:directory
+                                                                       inDomain:NSUserDomainMask
+                                                              appropriateForURL:nil
+                                                                         create:NO
+                                                                          error:NULL];
+        
+        picturesFolder = [picturesFolder URLByResolvingSymlinksInPath]; // tends to be a symlink when sandboxed
+        
+        if (![picturesFolder getResourceValue:&result forKey:NSURLEffectiveIconKey error:NULL] || result == nil)
+        {
+            result = [workspace iconForFileType:(NSString *)kUTTypeFolder];
+        }
+    }
+    
+	return result;
+}
 
 - (NSString*) displayName
 {
@@ -728,6 +749,10 @@ NSString* const IMBObjectViewControllerSegmentedControlKey = @"SegmentedControl"
 	[self willChangeValueForKey:@"canUseIconSize"];
 	_viewType = inViewType;
 	[IMBConfig setGlobalViewType:[NSNumber numberWithUnsignedInteger:inViewType]];
+    
+    // Persist
+    [self _saveStateToPreferences];
+    
 	[self didChangeValueForKey:@"canUseIconSize"];
 }
 
@@ -813,6 +838,9 @@ NSString* const IMBObjectViewControllerSegmentedControlKey = @"SegmentedControl"
 	// Tooltips in the icon view need to be rebuilt...
 	
 	[self _updateTooltips];
+    
+    // Persist
+    [self _saveStateToPreferences];
 }
 
 
@@ -1786,9 +1814,7 @@ NSString* const IMBObjectViewControllerSegmentedControlKey = @"SegmentedControl"
 			if ([promise.objects count] > 0)	// if not downloadable, these won't appear in objects list
 			{
 				NSData* promiseData = [NSKeyedArchiver archivedDataWithRootObject:promise];
-				
-				NSArray* declaredTypes = nil;
-				
+								
 				// We currently use a mix of 10.5 and 10.6 style pasteboard behaviors.
 				//
 				// 10.6 affords us the opportunity to write multiple items on the pasteboard at once, 
@@ -1856,16 +1882,11 @@ NSString* const IMBObjectViewControllerSegmentedControlKey = @"SegmentedControl"
 					
 					if ([self writesLocalFilesToPasteboard])
 					{
-						// Try declaring promise AFTER the other types
-						declaredTypes = [NSArray arrayWithObjects:kIMBPasteboardTypeObjectsPromise,NSFilesPromisePboardType,NSFilenamesPboardType, 
-										 
-										 // Also our own special metadata types that clients can make use of
-										 kIMBPublicTitleListPasteboardType, kIMBPublicMetadataListPasteboardType,
-										 
-										 nil]; 
-						// Used to be this. Any advantage to having both?  [NSArray arrayWithObjects:kIMBPasteboardTypeObjectsPromise,NSFilenamesPboardType,nil]
-						
-						for (IMBObject *object in [[ibObjectArrayController arrangedObjects] objectsAtIndexes:indexes])
+						[inPasteboard declareTypes:[NSArray arrayWithObject:kIMBPasteboardTypeObjectsPromise] owner:self];  // gets written in a moment
+                        
+                        // Setup file promise, but only for remote files
+                        // And only if the drag source is actually capable of supporting it. Best guess for that right now is the pasteboard being for dragging
+                        for (IMBObject *object in [[ibObjectArrayController arrangedObjects] objectsAtIndexes:indexes])
 						{
 							NSString *path = [object path];
 							NSString *type = [path pathExtension];
@@ -1875,32 +1896,48 @@ NSString* const IMBObjectViewControllerSegmentedControlKey = @"SegmentedControl"
 								// Keep all 3 items in sync, so the arrays are of the same length.
 								[fileTypes addObject:type];
 								[titles addObject:object.name];
-								[metadatas addObject:object.metadata];								
+								[metadatas addObject:object.metadata];
 							}
 						}
+                        
+                        if ([fileTypes count])
+                        {
+                            if (inPasteboard == [NSPasteboard pasteboardWithName:NSDragPboard] &&
+                                [promise isKindOfClass:[IMBRemoteObjectsPromise class]])
+                            {
+                                [inPasteboard addTypes:[NSArray arrayWithObject:NSFilesPromisePboardType] owner:self];
+                                BOOL wasSet = [inPasteboard setPropertyList:fileTypes forType:NSFilesPromisePboardType];
+                                if (!wasSet) NSLog(@"Could not set pasteboard type %@ to be %@", NSFilesPromisePboardType, fileTypes);
+                            }
+                            
+                            // Write more generic bits
+                            [inPasteboard addTypes:[NSArray arrayWithObjects:
+                                                    NSFilenamesPboardType,
+                                                    kIMBPublicTitleListPasteboardType,
+                                                    kIMBPublicMetadataListPasteboardType,
+                                                    nil]
+                                             owner:self];
+						
+						    BOOL wasSet = NO;
+                            wasSet = [inPasteboard setPropertyList:titles forType:kIMBPublicTitleListPasteboardType];
+                            if (!wasSet) NSLog(@"Could not set pasteboard type %@ to be %@", kIMBPublicTitleListPasteboardType, titles);
+                            wasSet = [inPasteboard setPropertyList:metadatas forType:kIMBPublicMetadataListPasteboardType];
+                            if (!wasSet) NSLog(@"Could not set pasteboard type %@ to be %@", kIMBPublicMetadataListPasteboardType, metadatas);
+                            
+                            //						#ifdef DEBUG
+                            //						NSLog(@"Titles on pasteboard: %@", titles);
+                            //						NSLog(@"MetaData on pasteboard: %@", metadatas);
+                            //						#endif
+                        }
 					}
 					else
 					{
-						declaredTypes = [NSArray arrayWithObjects:kIMBPasteboardTypeObjectsPromise,NSURLPboardType,kUTTypeURL,nil];
+                        [inPasteboard declareTypes:[NSArray arrayWithObjects:kIMBPasteboardTypeObjectsPromise,NSURLPboardType,kUTTypeURL,nil]
+                                             owner:self];
 					}
 					
-					[inPasteboard declareTypes:declaredTypes owner:self];
+                    // Write general iMedia promise
 					[inPasteboard setData:promiseData forType:kIMBPasteboardTypeObjectsPromise];
-					if ([fileTypes count])
-					{
-						BOOL wasSet = NO;
-						wasSet = [inPasteboard setPropertyList:fileTypes forType:NSFilesPromisePboardType];
-						if (!wasSet) NSLog(@"Could not set pasteboard type %@ to be %@", NSFilesPromisePboardType, fileTypes);
-						wasSet = [inPasteboard setPropertyList:titles forType:kIMBPublicTitleListPasteboardType];
-						if (!wasSet) NSLog(@"Could not set pasteboard type %@ to be %@", kIMBPublicTitleListPasteboardType, titles);
-						wasSet = [inPasteboard setPropertyList:metadatas forType:kIMBPublicMetadataListPasteboardType];
-						if (!wasSet) NSLog(@"Could not set pasteboard type %@ to be %@", kIMBPublicMetadataListPasteboardType, metadatas);
-
-//						#ifdef DEBUG
-//						NSLog(@"Titles on pasteboard: %@", titles);
-//						NSLog(@"MetaData on pasteboard: %@", metadatas);
-//						#endif
-					}
 				}
                 
                 [parser didWriteObjects:promise.objects toPasteboard:inPasteboard];

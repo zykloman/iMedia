@@ -9,7 +9,6 @@ Sandboxing
 We are in the process of getting iMedia sandbox-friendly on the `sandbox-compatibility` branch. It is working with the following caveats:
 
 * Search the headers for `SANDBOXING` to make sure your app has the entitlements iMedia needs
-* Custom folders are not supported yet. If the user drags one in, the browser will lose access to it the next time the OS boots
 * iMovie Sound Effects have been removed on the basis that Apple doesn't want us poking around another app's resources
 
 There is also a longer-term effort in the `iMediaSandboxing` fork to farm out parsing to XPC processes.
@@ -47,6 +46,10 @@ Recent Release Notes
 ### 2.5.3
 
 * `+[NSImage imb_imageForResource:fromAppWithBundleIdentifier:fallbackName:]` replaces `+imb_imageResourceNamed:fromApplication:fallbackTo:`. Apps likely shouldn't use this method anyway as it's fairly iMedia-specific. The new method nicely returns retina-compatible images if a suitable name is specified, like the other Cocoa image APIs.
+
+### 2.5.4
+
+* `-[NSWorkspace imb_iconForAppWithBundleIdentifier:]` has been removed. Its fallback mechanism was buggy and relied on private implementation details in the OS frameworks, which have since broke. If you are using this method in your app, provide your own implementation instead
 
 
 Development

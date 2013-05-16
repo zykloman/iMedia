@@ -315,10 +315,10 @@ NSString* const IMBFlickrNodeProperty_UUID = @"uuid";
 		NSMutableDictionary *metadata = [NSMutableDictionary dictionary];
 		[metadata addEntriesFromDictionary:photoDict];		// give metaData the whole thing!
 		NSURL *webPageURL = [context photoWebPageURLFromDictionary:photoDict];
-		[metadata setObject:webPageURL forKey:@"webPageURL"];
+		[metadata setObject:[webPageURL absoluteString] forKey:@"webPageURL"];
 		
 		NSURL *quickLookURL = [self imageURLForDesiredSize:kIMBFlickrSizeSpecifierMedium fromPhotoDict:photoDict context:context];
-		[metadata setObject:quickLookURL forKey:@"quickLookURL"];
+		[metadata setObject:[quickLookURL absoluteString] forKey:@"quickLookURL"];
 
 		// But give it a better 'description' without the nested item
 		NSString *descHTML = [[photoDict objectForKey:@"description"] objectForKey:@"_text"];
@@ -504,7 +504,7 @@ typedef enum {
 	// Example of a photo that can't be downloaded: THE DECEIVING title.
 	
 	//	load the specified page...
-	NSString* page = [NSString stringWithFormat:@"%ld", self.page + 1];
+	NSString* page = [NSString stringWithFormat:@"%ld", (long)(self.page + 1)];
 	[arguments setObject:page forKey:@"page"];
 	
 	return arguments;
